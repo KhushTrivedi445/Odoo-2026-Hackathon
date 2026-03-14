@@ -14,20 +14,62 @@ const ResetPasswordPage = () => {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) { toast.error("Enter your email"); return; }
-    toast.success("OTP sent to your email");
-    setStep("otp");
+    setLoading(true);
+    try {
+      const res = await fetch("http://localhost:8000/auth/request-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) throw new Error("Failed to request reset");
+      toast.success("OTP sent to your email (if registered)");
+      setStep("otp");
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleReset = (e: React.FormEvent) => {
+  const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!otp || otp.length < 4) { toast.error("Enter a valid OTP"); return; }
     if (password !== confirm) { toast.error("Passwords do not match"); return; }
     if (password.length < 6) { toast.error("Min 6 characters"); return; }
-    toast.success("Password reset successfully!");
-    setStep("done");
+    
+    setLoading(true);
+    try {
+      // 1. Verify OTP
+      const verifyRes = await fetch("http://localhost:8000/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp_code: otp }),
+      });
+      if (!verifyRes.ok) {
+        const errorData = await verifyRes.json();
+        throw new Error(errorData.detail || "Invalid OTP");
+      }
+
+      // 2. Reset Password
+      const resetRes = await fetch("http://localhost:8000/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, new_password: password }),
+      });
+      if (!resetRes.ok) throw new Error("Failed to reset password");
+
+      toast.success("Password reset successfully!");
+      setStep("done");
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

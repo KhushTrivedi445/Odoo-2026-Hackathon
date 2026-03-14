@@ -27,10 +27,10 @@ const SignupPage = () => {
     setLoading(true);
     try {
       await signup(name, email, password, role);
-      toast.success("Account created!");
-      navigate("/dashboard");
-    } catch {
-      toast.error("Signup failed");
+      toast.success("Account created! Please log in.");
+      navigate("/auth/login");
+    } catch (err: any) {
+      toast.error(err.message || "Signup failed");
     } finally {
       setLoading(false);
     }
