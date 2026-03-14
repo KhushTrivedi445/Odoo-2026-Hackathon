@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Package, AlertTriangle, FileInput, Truck, ArrowLeftRight } from "lucide-react";
@@ -6,42 +7,101 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import api from "../services/api";
+import { toast } from "sonner";
 
-const kpis = [
-  { label: "Total Products", value: 248, icon: Package, path: "/products", color: "text-primary" },
-  { label: "Low Stock Items", value: 12, icon: AlertTriangle, path: "/products?filter=low", color: "text-warning" },
-  { label: "Pending Receipts", value: 5, icon: FileInput, path: "/receipts", color: "text-success" },
-  { label: "Pending Deliveries", value: 8, icon: Truck, path: "/deliveries", color: "text-destructive" },
-  { label: "Internal Transfers", value: 3, icon: ArrowLeftRight, path: "/transfers", color: "text-primary" },
-];
-
-const barData = [
-  { name: "WH-A", stock: 1240 }, { name: "WH-B", stock: 890 },
-  { name: "WH-C", stock: 650 }, { name: "WH-D", stock: 430 },
-];
-
-const pieData = [
-  { name: "Electronics", value: 35 }, { name: "Furniture", value: 25 },
-  { name: "Consumables", value: 20 }, { name: "Raw Materials", value: 20 },
-];
 const COLORS = ["hsl(239,84%,67%)", "hsl(160,84%,39%)", "hsl(38,92%,50%)", "hsl(240,5%,65%)"];
-
-const recentActivity = [
-  { date: "2026-03-14", type: "Receipt", product: "Steel Bolts", sku: "SKU-001", qty: 500, from: "Supplier A", to: "WH-A" },
-  { date: "2026-03-14", type: "Transfer", product: "LED Panels", sku: "SKU-042", qty: 100, from: "WH-A", to: "WH-B" },
-  { date: "2026-03-13", type: "Delivery", product: "Power Cables", sku: "SKU-018", qty: 200, from: "WH-B", to: "Customer X" },
-  { date: "2026-03-13", type: "Adjustment", product: "Circuit Boards", sku: "SKU-007", qty: -5, from: "WH-C", to: "—" },
-  { date: "2026-03-12", type: "Receipt", product: "Copper Wire", sku: "SKU-055", qty: 1000, from: "Supplier B", to: "WH-A" },
-];
-
-const lowStockAlerts = [
-  { name: "Steel Rod", currentStock: 3, reorderLevel: 10 },
-  { name: "Thermal Paste", currentStock: 8, reorderLevel: 20 },
-  { name: "Office Chair Pro", currentStock: 2, reorderLevel: 5 },
-];
 
 const DashboardPage = () => {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  
+  // Dashboard state
+  const [kpiData, setKpiData] = useState({
+    totalProducts: 0,
+    lowStockItems: 0,
+    pendingReceipts: 0,
+    pendingDeliveries: 0,
+    internalTransfers: 0
+  });
+  
+  const [barData, setBarData] = useState<any[]>([]);
+  const [pieData, setPieData] = useState<any[]>([]);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [lowStockAlerts, setLowStockAlerts] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        // GET /dashboard
+        const response = await api.get("/dashboard");
+        const data = response.data;
+        
+        setKpiData({
+          totalProducts: data.total_products || 0,
+          lowStockItems: data.low_stock_items?.length || 0,
+          pendingReceipts: data.pending_receipts || 0,
+          pendingDeliveries: data.pending_deliveries || 0,
+          internalTransfers: data.internal_transfers || 0
+        });
+        
+        // Map backend data for Pie chart
+        setPieData(data.stock_by_category || []);
+        
+        // Set Low Stock Alerts
+        const mappedAlerts = (data.low_stock_items || []).map((item: any) => ({
+          name: item.name,
+          currentStock: item.stock,
+          reorderLevel: item.reorder_level
+        }));
+        setLowStockAlerts(mappedAlerts);
+
+        // GET /stock-movements for recent activity
+        const movementsRes = await api.get("/stock-movements");
+        const movements = movementsRes.data || [];
+        const mappedActivity = movements.slice(0, 5).map((m: any) => ({
+          date: new Date(m.created_at).toISOString().split('T')[0],
+          type: m.movement_type,
+          product: m.product?.name || `Product #${m.product_id}`,
+          sku: m.product?.sku || "N/A",
+          qty: m.quantity,
+          from: m.from_location || "—",
+          to: m.to_location || "—"
+        }));
+        setRecentActivity(mappedActivity);
+        
+        // Real warehouse breakdown from backend
+        setBarData(data.stock_by_warehouse || []);
+        
+      } catch (error: any) {
+        toast.error(error.response?.data?.detail || "Failed to fetch dashboard data");
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchDashboardData();
+  }, []);
+
+  const kpis = [
+    { label: "Total Products", value: kpiData.totalProducts, icon: Package, path: "/products", color: "text-primary" },
+    { label: "Low Stock Items", value: kpiData.lowStockItems, icon: AlertTriangle, path: "/products?filter=low", color: "text-warning" },
+    { label: "Pending Receipts", value: kpiData.pendingReceipts, icon: FileInput, path: "/receipts", color: "text-success" },
+    { label: "Pending Deliveries", value: kpiData.pendingDeliveries, icon: Truck, path: "/deliveries", color: "text-destructive" },
+    { label: "Internal Transfers", value: kpiData.internalTransfers, icon: ArrowLeftRight, path: "/transfers", color: "text-primary" },
+  ];
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader title="Dashboard" description="Overview of your inventory operations" />
+        <div className="flex h-64 items-center justify-center">
+          <p className="text-muted-foreground">Loading dashboard data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">

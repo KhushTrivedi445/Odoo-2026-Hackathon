@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Plus, Search, Pencil, Trash2, MapPin } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
@@ -10,55 +10,67 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useRole } from "@/hooks/useRole";
+import api from "../services/api";
 
-interface LocationStock {
-  warehouse: string;
-  rack: string;
-  qty: number;
+interface Warehouse {
+  id: number;
+  name: string;
+  location: string;
 }
 
 interface Product {
-  id: string;
+  id: number;
   sku: string;
   name: string;
   category: string;
   unit: string;
-  reorderLevel: number;
-  locations: LocationStock[];
+  reorder_level: number;
+  stock: number;
+  warehouse_id: number;
+  warehouse?: Warehouse;
 }
 
 const rackCapacities: Record<string, number> = {
   "A-1": 2000, "A-2": 2000, "B-1": 1500, "B-2": 1500, "C-1": 1000,
 };
 
-const initialProducts: Product[] = [
-  { id: "1", sku: "SKU-001", name: "Steel Bolts", category: "Hardware", unit: "pcs", reorderLevel: 100, locations: [{ warehouse: "WH-A", rack: "A-1", qty: 1200 }, { warehouse: "WH-A", rack: "A-2", qty: 300 }] },
-  { id: "2", sku: "SKU-002", name: "LED Panel 60x60", category: "Electronics", unit: "pcs", reorderLevel: 10, locations: [{ warehouse: "WH-B", rack: "B-1", qty: 45 }] },
-  { id: "3", sku: "SKU-003", name: "Copper Wire 2.5mm", category: "Raw Materials", unit: "m", reorderLevel: 500, locations: [{ warehouse: "WH-A", rack: "A-1", qty: 2000 }, { warehouse: "WH-B", rack: "B-2", qty: 1200 }] },
-  { id: "4", sku: "SKU-004", name: "Office Chair Pro", category: "Furniture", unit: "pcs", reorderLevel: 5, locations: [{ warehouse: "WH-C", rack: "C-1", qty: 8 }] },
-  { id: "5", sku: "SKU-005", name: "Thermal Paste", category: "Consumables", unit: "tubes", reorderLevel: 20, locations: [{ warehouse: "WH-B", rack: "B-1", qty: 120 }] },
-  { id: "6", sku: "SKU-006", name: "Circuit Board v3", category: "Electronics", unit: "pcs", reorderLevel: 50, locations: [{ warehouse: "WH-A", rack: "A-2", qty: 340 }] },
-];
+// Removed initialProducts mockup
 
 const categories = ["All", "Hardware", "Electronics", "Raw Materials", "Furniture", "Consumables"];
-const warehouses = ["WH-A", "WH-B", "WH-C"];
-const racksByWarehouse: Record<string, string[]> = {
-  "WH-A": ["A-1", "A-2"],
-  "WH-B": ["B-1", "B-2"],
-  "WH-C": ["C-1"],
-};
 
 const ProductsPage = () => {
   const { isManager } = useRole();
-  const [products, setProducts] = useState(initialProducts);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("All");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
-  const [form, setForm] = useState({ sku: "", name: "", category: "Hardware", unit: "pcs", reorderLevel: 10, warehouse: "WH-A", rack: "A-1", stock: 0 });
+  const [form, setForm] = useState({ sku: "", name: "", category: "Hardware", unit: "pcs", reorder_level: 10, warehouse_id: 0, stock: 0 });
 
-  const totalStock = (p: Product) => p.locations.reduce((s, l) => s + l.qty, 0);
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [prodRes, whRes] = await Promise.all([
+        api.get("/products"),
+        api.get("/warehouses")
+      ]);
+      setProducts(prodRes.data);
+      setWarehouses(whRes.data);
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to fetch data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const totalStock = (p: Product) => p.stock;
 
   const filtered = products.filter(p =>
     (catFilter === "All" || p.category === catFilter) &&
@@ -67,56 +79,59 @@ const ProductsPage = () => {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ sku: "", name: "", category: "Hardware", unit: "pcs", reorderLevel: 10, warehouse: "WH-A", rack: "A-1", stock: 0 });
+    setForm({ sku: "", name: "", category: "Hardware", unit: "pcs", reorder_level: 10, warehouse_id: warehouses[0]?.id || 0, stock: 0 });
     setDialogOpen(true);
   };
 
   const openEdit = (p: Product) => {
     setEditing(p);
-    const loc = p.locations[0] || { warehouse: "WH-A", rack: "A-1", qty: 0 };
-    setForm({ sku: p.sku, name: p.name, category: p.category, unit: p.unit, reorderLevel: p.reorderLevel, warehouse: loc.warehouse, rack: loc.rack, stock: totalStock(p) });
+    setForm({ 
+      sku: p.sku, name: p.name, category: p.category, unit: p.unit, 
+      reorder_level: p.reorder_level, warehouse_id: p.warehouse_id, stock: p.stock 
+    });
     setDialogOpen(true);
   };
 
-  const getRackUsage = (rack: string, excludeProductId?: string) => {
-    return products.reduce((sum, p) => {
-      if (excludeProductId && p.id === excludeProductId) return sum;
-      return sum + p.locations.filter(l => l.rack === rack).reduce((s, l) => s + l.qty, 0);
-    }, 0);
-  };
+  const handleSave = async () => {
+    if (!form.sku || !form.name || !form.category || !form.unit) { toast.error("Fill required fields (SKU, Name, Category, Unit)"); return; }
+    if (Number(form.stock) < 0) { toast.error("Stock cannot be negative"); return; }
+    if (!form.warehouse_id) { toast.error("Please select a warehouse"); return; }
 
-  const handleSave = () => {
-    if (!form.sku || !form.name) { toast.error("Fill required fields"); return; }
+    const payload = {
+      sku: form.sku,
+      name: form.name,
+      category: form.category,
+      unit: form.unit,
+      reorder_level: Number(form.reorder_level),
+      stock: Number(form.stock),
+      warehouse_id: Number(form.warehouse_id)
+    };
 
-    const capacity = rackCapacities[form.rack] || 1000;
-    const currentUsage = getRackUsage(form.rack, editing?.id);
-    if (currentUsage + form.stock > capacity) {
-      toast.error("This rack is full. Please choose another rack.");
-      return;
+    try {
+      if (editing) {
+        await api.put(`/products/${editing.id}`, payload);
+        toast.success("Product updated");
+      } else {
+        await api.post("/products", payload);
+        toast.success("Product created");
+      }
+      setDialogOpen(false);
+      fetchData();
+    } catch (error: any) {
+      console.error("Product save error:", error.response?.data || error);
+      toast.error(error.response?.data?.detail || "Failed to save product");
     }
+  };
 
-    if (editing) {
-      setProducts(prev => prev.map(p => p.id === editing.id ? {
-        ...p, sku: form.sku, name: form.name, category: form.category, unit: form.unit, reorderLevel: form.reorderLevel,
-        locations: [{ warehouse: form.warehouse, rack: form.rack, qty: form.stock }],
-      } : p));
-      toast.success("Product updated");
-    } else {
-      setProducts(prev => [...prev, {
-        id: Date.now().toString(), sku: form.sku, name: form.name, category: form.category, unit: form.unit, reorderLevel: form.reorderLevel,
-        locations: [{ warehouse: form.warehouse, rack: form.rack, qty: form.stock }],
-      }]);
-      toast.success("Product created");
+  const handleDelete = async (id: number) => {
+    try {
+      await api.delete(`/products/${id}`);
+      toast.success("Product deleted");
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to delete product");
     }
-    setDialogOpen(false);
   };
-
-  const handleDelete = (id: string) => {
-    setProducts(prev => prev.filter(p => p.id !== id));
-    toast.success("Product deleted");
-  };
-
-  const availableRacks = racksByWarehouse[form.warehouse] || [];
 
   return (
     <div className="page-container">
@@ -135,6 +150,11 @@ const ProductsPage = () => {
         </Select>
       </div>
 
+      {loading ? (
+        <div className="flex justify-center items-center h-48">
+          <p className="text-muted-foreground">Loading products...</p>
+        </div>
+      ) : (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-card border border-border/50 rounded-lg overflow-hidden">
         <Table>
           <TableHeader>
@@ -147,8 +167,8 @@ const ProductsPage = () => {
           </TableHeader>
           <TableBody>
             {filtered.map((p, i) => {
-              const stock = totalStock(p);
-              const isLow = stock <= p.reorderLevel;
+              const stock = p.stock || 0;
+              const isLow = stock <= p.reorder_level;
               return (
                 <motion.tr key={p.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
                   className="border-b border-border/30 hover:bg-accent/50 transition-colors">
@@ -157,7 +177,7 @@ const ProductsPage = () => {
                   <TableCell className="text-muted-foreground text-sm">{p.category}</TableCell>
                   <TableCell className="text-muted-foreground text-sm">{p.unit}</TableCell>
                   <TableCell className={isLow ? "text-warning font-medium" : ""}>{stock}{isLow && " ⚠️"}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{p.reorderLevel}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm">{p.reorder_level}</TableCell>
                   {isManager && (
                     <TableCell>
                       <div className="flex gap-1">
@@ -181,10 +201,11 @@ const ProductsPage = () => {
           </TableBody>
         </Table>
       </motion.div>
+      )}
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? "Edit Product" : "New Product"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>SKU</Label><Input value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} /></div>
@@ -196,54 +217,44 @@ const ProductsPage = () => {
               </Select>
             </div>
             <div><Label>Unit</Label><Input value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
-            <div><Label>Reorder Level</Label><Input type="number" value={form.reorderLevel} onChange={e => setForm(f => ({ ...f, reorderLevel: Number(e.target.value) }))} /></div>
+            <div><Label>Reorder Level</Label><Input type="number" min="0" value={form.reorder_level} onChange={e => setForm(f => ({ ...f, reorder_level: Number(e.target.value) }))} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Warehouse</Label>
-                <Select value={form.warehouse} onValueChange={v => setForm(f => ({ ...f, warehouse: v, rack: racksByWarehouse[v]?.[0] || "" }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{warehouses.map(w => <SelectItem key={w} value={w}>{w}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div><Label>Rack</Label>
-                <Select value={form.rack} onValueChange={v => setForm(f => ({ ...f, rack: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{availableRacks.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
+              <div className="col-span-2"><Label>Warehouse</Label>
+                <Select value={form.warehouse_id ? form.warehouse_id.toString() : ""} onValueChange={v => setForm(f => ({ ...f, warehouse_id: Number(v) }))}>
+                  <SelectTrigger><SelectValue placeholder="Select a warehouse" /></SelectTrigger>
+                  <SelectContent>{warehouses.map(w => <SelectItem key={w.id} value={w.id.toString()}>{w.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>
-            <div><Label>Stock</Label><Input type="number" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: Number(e.target.value) }))} /></div>
+            <div><Label>Current Stock</Label><Input type="number" min="0" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value === '' ? 0 : Number(e.target.value) }))} /></div>
           </div>
           <DialogFooter><Button onClick={handleSave}>{editing ? "Update" : "Create"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Stock Availability Detail Dialog */}
       <Dialog open={!!detailProduct} onOpenChange={() => setDetailProduct(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Stock Availability — {detailProduct?.name}</DialogTitle></DialogHeader>
           {detailProduct && (
             <div className="space-y-3">
               <div className="text-sm text-muted-foreground">SKU: {detailProduct.sku} · Category: {detailProduct.category}</div>
               <Table>
                 <TableHeader>
-                  <TableRow><TableHead>Warehouse</TableHead><TableHead>Rack</TableHead><TableHead>Qty</TableHead></TableRow>
+                  <TableRow><TableHead>Warehouse</TableHead><TableHead>Qty</TableHead></TableRow>
                 </TableHeader>
                 <TableBody>
-                  {detailProduct.locations.map((loc, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{loc.warehouse}</TableCell>
-                      <TableCell>{loc.rack}</TableCell>
-                      <TableCell>{loc.qty}</TableCell>
-                    </TableRow>
-                  ))}
+                  <TableRow>
+                     <TableCell>{detailProduct.warehouse?.name || `Warehouse #${detailProduct.warehouse_id}`}</TableCell>
+                     <TableCell>{detailProduct.stock}</TableCell>
+                  </TableRow>
                   <TableRow className="font-bold border-t border-border">
-                    <TableCell colSpan={2}>Total</TableCell>
+                    <TableCell>Total</TableCell>
                     <TableCell>{totalStock(detailProduct)}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
-              {totalStock(detailProduct) <= detailProduct.reorderLevel && (
-                <div className="text-warning text-sm font-medium">⚠️ Low Stock: {detailProduct.name} — Current: {totalStock(detailProduct)}, Reorder Level: {detailProduct.reorderLevel}</div>
+              {totalStock(detailProduct) <= detailProduct.reorder_level && (
+                <div className="text-warning text-sm font-medium">⚠️ Low Stock: {detailProduct.name} — Current: {totalStock(detailProduct)}, Reorder Level: {detailProduct.reorder_level}</div>
               )}
             </div>
           )}

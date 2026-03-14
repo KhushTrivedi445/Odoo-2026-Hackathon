@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -6,25 +6,44 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Search } from "lucide-react";
-
-const movements = [
-  { date: "2026-03-14", type: "Receipt", product: "Steel Bolts", sku: "SKU-001", qty: 500, from: "Supplier A", to: "WH-A" },
-  { date: "2026-03-14", type: "Transfer", product: "LED Panels", sku: "SKU-042", qty: 100, from: "WH-A", to: "WH-B" },
-  { date: "2026-03-13", type: "Delivery", product: "Power Cables", sku: "SKU-018", qty: 200, from: "WH-B", to: "Customer X" },
-  { date: "2026-03-13", type: "Adjustment", product: "Circuit Boards", sku: "SKU-007", qty: -5, from: "WH-C", to: "—" },
-  { date: "2026-03-12", type: "Receipt", product: "Copper Wire", sku: "SKU-055", qty: 1000, from: "Supplier B", to: "WH-A" },
-  { date: "2026-03-11", type: "Transfer", product: "Office Chairs", sku: "SKU-004", qty: 10, from: "WH-A", to: "WH-C" },
-  { date: "2026-03-10", type: "Delivery", product: "Thermal Paste", sku: "SKU-005", qty: 50, from: "WH-A", to: "Customer Y" },
-];
+import api from "../services/api";
 
 const MoveHistoryPage = () => {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
+  const [movements, setMovements] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = movements.filter(m =>
-    (typeFilter === "All" || m.type === typeFilter) &&
-    (m.product.toLowerCase().includes(search.toLowerCase()) || m.sku.toLowerCase().includes(search.toLowerCase()))
-  );
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [mov, prod] = await Promise.all([
+          api.get("/stock-movements"),
+          api.get("/products")
+        ]);
+        setMovements(mov.data);
+        setProducts(prod.data);
+      } catch (err) {
+        console.error("Failed to load move history", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const getProductName = (id: number) => {
+    const p = products.find(p => p.id === id);
+    return p ? p.name : `Product #${id}`;
+  };
+
+  const filtered = movements.filter(m => {
+    const prodName = getProductName(m.product_id);
+    return (typeFilter === "All" || m.movement_type === typeFilter) &&
+           (prodName.toLowerCase().includes(search.toLowerCase()));
+  });
 
   return (
     <div className="page-container">
@@ -43,28 +62,33 @@ const MoveHistoryPage = () => {
         </Select>
       </div>
 
+      {loading ? (
+        <div className="flex justify-center items-center h-48">
+          <p className="text-muted-foreground">Loading stock movements...</p>
+        </div>
+      ) : (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-card border border-border/50 rounded-lg overflow-hidden">
         <Table>
           <TableHeader><TableRow className="table-sticky-header">
             <TableHead>Date</TableHead><TableHead>Type</TableHead><TableHead>Product</TableHead>
-            <TableHead>SKU</TableHead><TableHead>Qty</TableHead><TableHead>From</TableHead><TableHead>To</TableHead>
+            <TableHead>Qty</TableHead>
+            <TableHead>Details</TableHead>
           </TableRow></TableHeader>
           <TableBody>
             {filtered.map((m, i) => (
               <motion.tr key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
                 className="border-b border-border/30 hover:bg-accent/50 transition-colors">
-                <TableCell className="text-sm">{m.date}</TableCell>
-                <TableCell><StatusBadge status={m.type} /></TableCell>
-                <TableCell className="font-medium">{m.product}</TableCell>
-                <TableCell className="font-mono text-sm text-muted-foreground">{m.sku}</TableCell>
-                <TableCell>{m.qty}</TableCell>
-                <TableCell className="text-muted-foreground text-sm">{m.from}</TableCell>
-                <TableCell className="text-muted-foreground text-sm">{m.to}</TableCell>
+                <TableCell className="text-sm">{new Date(m.created_at).toLocaleString()}</TableCell>
+                <TableCell><StatusBadge status={m.movement_type} /></TableCell>
+                <TableCell className="font-medium">{getProductName(m.product_id)}</TableCell>
+                <TableCell className={m.quantity < 0 ? "text-destructive" : ""}>{m.quantity}</TableCell>
+                <TableCell className="text-muted-foreground text-sm">{m.reference || "—"}</TableCell>
               </motion.tr>
             ))}
           </TableBody>
         </Table>
       </motion.div>
+      )}
     </div>
   );
 };

@@ -219,15 +219,21 @@ def get_dashboard_metrics(db: Session):
     pending_deliveries = db.query(Delivery).filter(Delivery.status == "Pending").count()
 
     categories = {}
+    warehouses_stock = {}
     for p in products:
         categories[p.category] = categories.get(p.category, 0) + 1
+        
+        wh_name = p.warehouse.name if p.warehouse else "Unknown"
+        warehouses_stock[wh_name] = warehouses_stock.get(wh_name, 0) + p.stock
 
     stock_by_category = [{"name": k, "value": v} for k, v in categories.items()]
+    stock_by_warehouse = [{"name": k, "stock": v} for k, v in warehouses_stock.items()]
 
     return {
         "total_products": total_products,
         "low_stock_items": low_stock_items,
         "pending_receipts": pending_receipts,
         "pending_deliveries": pending_deliveries,
-        "stock_by_category": stock_by_category
+        "stock_by_category": stock_by_category,
+        "stock_by_warehouse": stock_by_warehouse
     }

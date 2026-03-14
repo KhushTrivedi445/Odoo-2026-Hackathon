@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../services/api";
 
 interface User {
   id: string;
@@ -32,45 +33,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const login = useCallback(async (email: string, password: string) => {
-    const response = await fetch("http://localhost:8000/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || "Login failed");
+    try {
+      const response = await api.post("/auth/login", { email, password });
+      const data = response.data;
+      
+      const u: User = { 
+        id: data.access_token,
+        name: data.user_name || "User", 
+        email: data.user_email || email, 
+        role: data.user_role || "Staff" 
+      };
+      
+      localStorage.setItem("token", data.access_token);
+      localStorage.setItem("core_inventory_user", JSON.stringify(u));
+      setUser(u);
+    } catch (error: any) {
+      throw new Error(error.response?.data?.detail || "Login failed");
     }
-
-    const data = await response.json();
-    
-    // Structure expected by the frontend based on backend response Profile
-    const u: User = { 
-      id: data.access_token, // or actual ID if backend returned one, token is fine for now
-      name: data.user_name, 
-      email: data.user_email, 
-      role: data.user_role 
-    };
-    
-    localStorage.setItem("token", data.access_token);
-    localStorage.setItem("core_inventory_user", JSON.stringify(u));
-    setUser(u);
   }, []);
 
   const signup = useCallback(async (name: string, email: string, password: string, role: "Manager" | "Staff") => {
-    const response = await fetch("http://localhost:8000/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password, role }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || "Signup failed");
+    try {
+      await api.post("/auth/signup", { name, email, password, role });
+    } catch (error: any) {
+      throw new Error(error.response?.data?.detail || "Signup failed");
     }
-    // Signup does not log you in automatically, it redirects to login page.
-    // We don't set the user context here.
   }, []);
 
   const logout = useCallback(() => {

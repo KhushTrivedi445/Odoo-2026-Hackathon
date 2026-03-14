@@ -9,30 +9,57 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { useEffect } from "react";
+import api from "../services/api";
 import { useRole } from "@/hooks/useRole";
 
-interface Warehouse { id: string; name: string; location: string; }
-interface Rack { id: string; name: string; warehouse: string; }
+interface Warehouse { id: number; name: string; location: string; }
 
 const SettingsPage = () => {
   const { isManager } = useRole();
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([
-    { id: "1", name: "WH-A", location: "Building A, Floor 1" },
-    { id: "2", name: "WH-B", location: "Building B, Floor 2" },
-    { id: "3", name: "WH-C", location: "Building C, Floor 1" },
-  ]);
-  const [racks, setRacks] = useState<Rack[]>([
-    { id: "1", name: "A-1", warehouse: "WH-A" },
-    { id: "2", name: "A-2", warehouse: "WH-A" },
-    { id: "3", name: "B-1", warehouse: "WH-B" },
-    { id: "4", name: "B-2", warehouse: "WH-B" },
-    { id: "5", name: "C-1", warehouse: "WH-C" },
-  ]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get("/warehouses");
+      setWarehouses(res.data);
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to fetch warehouses");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const [whDialog, setWhDialog] = useState(false);
-  const [rackDialog, setRackDialog] = useState(false);
   const [whForm, setWhForm] = useState({ name: "", location: "" });
-  const [rackForm, setRackForm] = useState({ name: "", warehouse: "WH-A" });
+
+  const handleCreate = async () => {
+    if (!whForm.name) { toast.error("Enter name"); return; }
+    try {
+      await api.post("/warehouses", whForm);
+      toast.success("Warehouse created");
+      setWhDialog(false);
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to create warehouse");
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await api.delete(`/warehouses/${id}`);
+      toast.success("Warehouse deleted");
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || "Failed to delete warehouse");
+    }
+  };
 
   return (
     <div className="page-container">
@@ -41,7 +68,6 @@ const SettingsPage = () => {
       <Tabs defaultValue="warehouses">
         <TabsList className="mb-4">
           <TabsTrigger value="warehouses">Warehouses</TabsTrigger>
-          <TabsTrigger value="racks">Racks</TabsTrigger>
         </TabsList>
 
         <TabsContent value="warehouses">
@@ -50,6 +76,12 @@ const SettingsPage = () => {
               <Button size="sm" onClick={() => { setWhForm({ name: "", location: "" }); setWhDialog(true); }}><Plus className="w-4 h-4 mr-1" /> Add Warehouse</Button>
             </div>
           )}
+          
+          {loading ? (
+            <div className="flex justify-center items-center h-48">
+              <p className="text-muted-foreground">Loading warehouses...</p>
+            </div>
+          ) : (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-card border border-border/50 rounded-lg overflow-hidden">
             <Table>
               <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Location</TableHead>{isManager && <TableHead className="w-20">Actions</TableHead>}</TableRow></TableHeader>
@@ -60,7 +92,7 @@ const SettingsPage = () => {
                     <TableCell className="text-muted-foreground">{w.location}</TableCell>
                     {isManager && (
                       <TableCell>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { setWarehouses(prev => prev.filter(x => x.id !== w.id)); toast.success("Deleted"); }}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDelete(w.id)}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
                       </TableCell>
@@ -70,34 +102,7 @@ const SettingsPage = () => {
               </TableBody>
             </Table>
           </motion.div>
-        </TabsContent>
-
-        <TabsContent value="racks">
-          {isManager && (
-            <div className="flex justify-end mb-3">
-              <Button size="sm" onClick={() => { setRackForm({ name: "", warehouse: "WH-A" }); setRackDialog(true); }}><Plus className="w-4 h-4 mr-1" /> Add Rack</Button>
-            </div>
           )}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-card border border-border/50 rounded-lg overflow-hidden">
-            <Table>
-              <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Warehouse</TableHead>{isManager && <TableHead className="w-20">Actions</TableHead>}</TableRow></TableHeader>
-              <TableBody>
-                {racks.map((r, i) => (
-                  <motion.tr key={r.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }} className="border-b border-border/30 hover:bg-accent/50 transition-colors">
-                    <TableCell className="font-medium">{r.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{r.warehouse}</TableCell>
-                    {isManager && (
-                      <TableCell>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { setRacks(prev => prev.filter(x => x.id !== r.id)); toast.success("Deleted"); }}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </TableCell>
-                    )}
-                  </motion.tr>
-                ))}
-              </TableBody>
-            </Table>
-          </motion.div>
         </TabsContent>
       </Tabs>
 
@@ -108,26 +113,7 @@ const SettingsPage = () => {
             <div><Label>Name</Label><Input value={whForm.name} onChange={e => setWhForm(f => ({ ...f, name: e.target.value }))} /></div>
             <div><Label>Location</Label><Input value={whForm.location} onChange={e => setWhForm(f => ({ ...f, location: e.target.value }))} /></div>
           </div>
-          <DialogFooter><Button onClick={() => {
-            if (!whForm.name) { toast.error("Enter name"); return; }
-            setWarehouses(prev => [...prev, { id: Date.now().toString(), ...whForm }]);
-            setWhDialog(false); toast.success("Warehouse created");
-          }}>Create</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={rackDialog} onOpenChange={setRackDialog}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>New Rack</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>Name</Label><Input value={rackForm.name} onChange={e => setRackForm(f => ({ ...f, name: e.target.value }))} /></div>
-            <div><Label>Warehouse</Label><Input value={rackForm.warehouse} onChange={e => setRackForm(f => ({ ...f, warehouse: e.target.value }))} /></div>
-          </div>
-          <DialogFooter><Button onClick={() => {
-            if (!rackForm.name) { toast.error("Enter name"); return; }
-            setRacks(prev => [...prev, { id: Date.now().toString(), ...rackForm }]);
-            setRackDialog(false); toast.success("Rack created");
-          }}>Create</Button></DialogFooter>
+          <DialogFooter><Button onClick={handleCreate}>Create</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
