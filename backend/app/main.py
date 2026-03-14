@@ -5,7 +5,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from routes import auth_routes
+from routes import (
+    auth_routes, warehouse_routes, product_routes, receipt_routes,
+    delivery_routes, transfer_routes, adjustment_routes, dashboard_routes
+)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -39,6 +42,13 @@ app.add_middleware(
 
 # Include routes
 app.include_router(auth_routes.router)
+app.include_router(warehouse_routes.router)
+app.include_router(product_routes.router)
+app.include_router(receipt_routes.router)
+app.include_router(delivery_routes.router)
+app.include_router(transfer_routes.router)
+app.include_router(adjustment_routes.router)
+app.include_router(dashboard_routes.router)
 
 @app.get("/")
 def read_root():
